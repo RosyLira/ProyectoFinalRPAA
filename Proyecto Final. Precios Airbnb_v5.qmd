@@ -1,0 +1,389 @@
+---
+title: "Proyecto Final. Precios Airbnb"
+format: pdf
+editor: visual
+---
+
+Integrantes de equipo:
+
+Altamirano Paredes Michel Alejandro
+
+Bonilla Baranda Emmanuel
+
+Corona Jimenez Andrea
+
+Delucio Campos Jimena
+
+Meza Miranda Luis Maurilio
+
+## Introducción
+
+En el presente trabajo se mostrarán los resultados obtenidos tras realizar un análisis a diversas variables que componen a una base de datos relacionada con Airbnb, la compañia encargada de ayudar a aquellos que desean rentar propiedades o ser arrendatarios.
+
+Dicho análisis consiste en realizar un modelo que nos permita describir como es que estas variables influyen e influirán en el costo de rentar cada Airbnb, con el añadido de que también se presentará una calculadora que nos permita obtener el valor futuro de cada uno de estos.
+
+Así pues se presentan los siguientes resultados.
+
+## 1. Las variables
+
+Analizando la base de datos original en Excel (realizado así pues la memoria de R nos imposibilitó visualizar por completo la base aquí) es posible notar que existen múltiples variables que resultan irrelevantes para nuestro modelo, pues varias de ellas no nos aportan valores medibles que podamos incluir en el mismo, como por ejemplo variables que contienen únicamente letras.
+
+Debido a esto se realizó una primer limpieza y correción de los datos en Excel, lo que finalmente nos terminó por arrojar la siguiente base de datos:
+
+```{r}
+#Librerías utilizadas
+library(corrplot)
+library(MASS)
+library(dplyr)
+library(readxl)
+library(nortest)
+library(ggplot2)
+library(car)
+library(DescTools)
+#Usa el comado file.choose() para abrir la ubicación del xlsx
+#Lectura del excel
+excel <- "C:\\Users\\user\\OneDrive\\Escritorio\\6to Semestre\\Modelos Parametricos\\Nueva carpeta\\PROYECTO MODELOS\\PROYECTO MODELOS\\Datos_modelos.xlsx"
+datos <- read_excel(excel, sheet = "Datos")
+attach(datos);
+```
+
+Las variables que en ella aparecen fueren elegidas por su relación con el precio, descartando así un total de 44 variables que resultaban irrelevantes para el modelo. Los motivos por los que se descartaron el resto de variables se muestran a continuación:
+
+-   Letras: Debido a que muchas de estas variables presentaban únicamente palabras, links y carácteres fueron retiradas de la base de datos a fin de que se tuviesen únicamente datos numerables y cuantificables
+
+-   Porcentajes: Al igual que el punto anterior los porcentajes al tener caracteres fueron ignorados para el modelo por contener datos que no eran medibles en R.
+
+-   Repetición de datos: Debido a que las columnas del máximo y mínimo de noches aparecían 6 veces con los mismos datos pero con nombres distintos fueron dejadas fuera del modelo para evitar repeticiones innecesarias.
+
+Aunado a esto se eliminaron tanto los valores NA que contenía la base de datos como la variable id, que nos servía para identificar los Airbnb's pero que en realidad no se incluye dentro del modelo
+
+```{r}
+#Primera limpieza
+datos <- na.omit(datos)
+datos <- datos %>% 
+  dplyr::select(-id)
+```
+
+Con estas razones en mente procedimos a definir nuestro modelo y, para ello, se tuvo que analizar con más profundidad los datos que fueron escogidos anteriormente.
+
+## 2. Análisis exploratorio de las variables
+
+Para ser más precisos con los datos que estábamos trabajando se discutió sobre que variables podían llegar a estar más correlacionadas entre sí, siendo estas las siguientes:
+
+-   1 y 2.- Se puede llegar a dar pues ambas variables parametran datos muy similares
+
+-   3 y 4.- Se puede llegar a dar pues ambas tienen datos relativos a la ubicación del Airbnb
+
+-   5, 6 y 7.- Puede llegar a darse pues las tres variavles hacen alusión a la cantidad de huéspedes que puede albergar el Airbnb
+
+-   6 y 30.- Podría llegar a darse pues, en una mala tipificación de las habitaciones los baños podrían haber sido tomados como tales, o tal vez porque las habitaciones tengan un baño integrado
+
+-   5, 6, 7 y 30.- Igual que el motivo anterior, una mala tipificación de los datos podría hacer que estas variables estén relacionadas
+
+-   9, 10, 11, 25, 26 y 27.- Podrían llegar a estar relacionadas pues, mientras mayor o menor sea el número de noches que alguien se hospede en el Airbnb menor o mayor será la cantidad de días que estuvo disponible
+
+-   12 - 19.- Pues todas estas variables hacen alusión a las reviews del Airbnb
+
+-   3, 4 y 18.- Pues las tres variables están relacionadas con la ubicación del Airbnb
+
+-   6, 7, 15 y 30.- Pues la limpieza del Airbnb es notoria en las recámaras, las camas y los baños
+
+-   1, 2, 20, 21, 22, 23.- Pues son estadísticas del hospedador de cada Airbnb
+
+-   11, 25, 26, 27.- Pues son las disponibilidades acumuladas en ciertos periodos de tiempo, siendo el más alto de un año, por lo que si descubrimos correlación podríamos quedarnos con el de periodicidad más grande
+
+-   12, 24, 28, 29.- Pues hace alusión al número de Reviews que el Airbnb ha tenido a lo largo de diferentes periodos de tiempo.
+
+Para comprobar si nuestras suposiciones eran correctas se realizaron gráficos de correlaciones entre cada una de las variables anteriormente expuestas.
+
+Tras realizar 12 gráficos pudimos ver que nuestras suposiciones eran correctas, por lo que las variables reiterativas fueron eliminadas buscando cumplir con los supuestos del modelo y, debido a la cantidad de gráficos realizados solo expondremos el gráfico general para tener una idea del análisis realizado (aunque cabe aclarar que la escala no permite visualizarlo de buena manera, por eso se hizo caso por caso).
+
+```{r}
+#Gráfico de correlaciones
+corrplot(cor(datos), method = "number", tl.cex = .2)
+
+#Segunda limpieza después de ver correlaciones
+attach(datos)
+datos <- datos %>% 
+  dplyr::select(-host_listings_count,
+                -beds,
+                -availability_30,
+                -availability_60,
+                -availability_90,
+                -review_scores_rating,
+                -review_scores_accuracy,
+                -review_scores_communication,
+                -review_scores_value,
+                -calculated_host_listings_count,
+                -calculated_host_listings_count_entire_homes,
+                -number_of_reviews_ltm)
+```
+
+Nota: Para más información de cada gráfico consultar el archivo "Receta para un buen modelo de regresión lineal (Airbnb)"
+
+## 3. Escalas y el modelo
+
+Teniendo ahora una base de datos con menos variables se procedió a analizar las escalas de cada una de ellas.
+
+Habiendo eliminado las variables reiterativas se realizó el sguiente modelo:
+
+```{r}
+#Modelo original
+modelo1 <- lm(price~host_total_listings_count                    
+              +latitude                                    
+              +longitude                                   
+              +accommodates                                
+              +bedrooms                                    
+              +minimum_nights                              
+              +maximum_nights                              
+              +availability_365                            
+              +number_of_reviews                           
+              +review_scores_cleanliness                   
+              +review_scores_checkin                      
+              +review_scores_location                      
+              +calculated_host_listings_count_private_rooms
+              +calculated_host_listings_count_shared_rooms 
+              +reviews_per_month                           
+              +number_of_reviews_l30d                      
+              +banios)
+summary(modelo1)
+
+seleccion <- stepAIC(modelo1, direction = c("both"));
+summary(seleccion)
+```
+
+Dado que el anterior modelo contempla la base datos, hay que tener en cuenta que dichos datos tienen valores atípicos, por lo que será indispensable quitar para obtner un mejor modelo.
+
+Creamos el siguiente código para eliminar datos atípicos por columna:
+
+```{r}
+#Variables sin datos atípicos
+
+# Crear una función para eliminar valores atípicos basados en el rango intercuartílico en un dataframe
+
+remove_outliers_iqr <- function(data, multiplier) {
+  for (columna in names(data)) {
+    q1 <- quantile(data[[columna]], 0.25)
+    q3 <- quantile(data[[columna]], 0.75)
+    iqr <- q3 - q1
+    lower_limit <- q1 - multiplier * iqr
+    upper_limit <- q3 + multiplier * iqr
+    data <- subset(data, data[[columna]] >= lower_limit & data[[columna]] <= upper_limit)
+  }
+  return(data)
+}
+# Llamamos a la función para eliminar valores atípicos en todas las columnas del dataframe (data)
+
+data <- remove_outliers_iqr(datos, 1.5)  # Elimina los valores que están fuera de 1.5 veces el rango intercuartílico en cada columna y guardamos en una nueva base de datos.
+
+```
+
+Así probamos nuestro modelo 1, pero ahora utilizando una base de datos sin valores atípicos, y seleccionamos un modelo sin considerar variables que no son significantes.
+
+```{r}
+attach(data)
+#Modelo sin atípicos
+modelo1 <- lm(price~host_total_listings_count                    
+              +latitude                                    
+              +longitude                                   
+              +accommodates                                
+              +bedrooms                                    
+              +minimum_nights                              
+              +maximum_nights                              
+              +availability_365                            
+              +number_of_reviews                           
+              +review_scores_cleanliness                   
+              +review_scores_checkin                      
+              +review_scores_location                      
+              +calculated_host_listings_count_private_rooms
+              +calculated_host_listings_count_shared_rooms 
+              +reviews_per_month                           
+              +number_of_reviews_l30d                      
+              +banios)
+summary(modelo1)
+
+seleccion <- stepAIC(modelo1, direction = c("both"));
+summary(seleccion)
+
+```
+
+Como se puede ver, al eliminar dichos valores atípicos,ahora hay aumentando su precisión tanto de su R\^2 ajustada como de los p-values de cada variable.
+
+Nota: Para más información de cada transformación consultar el archivo "Receta para un buen modelo de regresión lineal (Airbnb)"
+
+## 4. Los datos atípicos y los supuestos
+
+Finalmente procedimos a a acotar nuestro modelo, haciéndolo efectivo únicamente para Airbnb's que cumplen ciertas características.
+
+Para tratar de subir un poco nuestra R\^2 ajustada, utilizamos la funcion coxbox, la cual nos dará una potencia no solo para subir lo anterior mencionado, también para poder validar los supuesto que nuestro modelo debe cumplir. Así del mejor modelo que obtuvimos anteriormente, buscamos dicha potencia:
+
+```{r}
+BC <-boxcox(seleccion, lambda = seq(-0.75,6, by = 0.05), plotit = TRUE)
+lamda <- BC$x[which.max(BC$y)]
+```
+
+Ya encontrada dicha lamda, transformamos nuestra variable de precios, así obteniendo el siguiente modelo, tomando el mejor modelo que anteriormente se dijo.
+
+Para ello utilizaremos la siguiente transformación: $$y = \dfrac{price^{\lambda}-1}{\lambda}$$
+
+```{r}
+modelo2 <- lm((((price^lamda)-1)/lamda) ~ host_total_listings_count + latitude + longitude + 
+                accommodates + bedrooms + availability_365 + number_of_reviews + 
+                review_scores_cleanliness + review_scores_checkin + review_scores_location + 
+                calculated_host_listings_count_private_rooms + number_of_reviews_l30d + 
+                banios)
+summary(modelo2)
+seleccion <- stepAIC(modelo2, direction = c("both"));
+summary(seleccion)
+```
+
+Del modelo 2, tomamos ahora el más se ajuste, así pues, por último volvemos a quitar algunos datos que a lo mejor se vean atípicos, por lo que usaremos la distancia de cook, aplicando al modelo que mejor se obtuvo en la variable seleccion.
+
+```{r}
+# Calcular la distancia de Cook del mejor modelo
+distancia_cook <- cooks.distance(seleccion)
+
+# Definir el umbral para la distancia de Cook
+umbral <- 4/length(distancia_cook)  # Utilizamos el umbral 4/n, donde n es el número de observaciones
+
+# Identificar las observaciones influyentes
+observaciones_influyentes <- which(distancia_cook > umbral)
+
+# Paso 4: Eliminar las observaciones influyentes del conjunto de datos
+datos_filtrados <- data[-observaciones_influyentes, ]
+```
+
+Como nos interesa la variable precios, ahora veamos un resumen:
+
+```{r}
+summary(datos_filtrados$price)
+```
+
+Finalmente con el resúmen anterior, observemos que con la siguiente fórmula $$1314+(1.5(1314-600)) = 2385$$ Así eliminamos precios que esten por encima de dicho valor, con el siguiente código:
+
+```{r}
+#Quitamos los últimos valore atípicos en los precios
+data_clean <- subset(datos_filtrados, datos_filtrados$price <= 2385)
+#Volvemos a eliminar datos atípicos
+data_2 <- remove_outliers_iqr(data_clean, 1.5)  # Elimina los valores que están fuera de 1.5 veces el rango intercuartílico en cada columna
+```
+
+Finalmente nuestro mejor modelo queda de la siguiente manera:
+
+```{r}
+attach(data_2)
+
+mejor_modelo_ajustado <- lm((((price^lamda) - 1)/lamda) ~ host_total_listings_count + 
+                        latitude + longitude + accommodates + availability_365 + 
+                        number_of_reviews + review_scores_cleanliness + review_scores_checkin + 
+                        review_scores_location + calculated_host_listings_count_private_rooms + 
+                        number_of_reviews_l30d + banios)
+summary(mejor_modelo_ajustado)
+```
+
+Nuevamente tomamos el mejor modelo con la variable seleccion:
+
+```{r}
+seleccion <- stepAIC(mejor_modelo_ajustado, direction = c("both"));
+summary(seleccion)
+```
+
+```{r}
+modelo_final<- lm((((price^lamda) - 1)/lamda) ~ host_total_listings_count + 
+    latitude + longitude + accommodates + availability_365 + 
+    + review_scores_cleanliness + review_scores_location + 
+    calculated_host_listings_count_private_rooms + banios)
+summary(modelo_final)
+```
+
+Finalmente vamos a realizar la validación de nuestro modelo, para enseguida proceder una interpretación de nuestro modelo:
+
+## Linealidad:
+
+```{r}
+#Hacemos la prueba
+plot(modelo_final,1)
+cor.test((((price^lamda) - 1)/lamda), host_total_listings_count)
+cor.test((((price^lamda) - 1)/lamda), latitude)
+cor.test((((price^lamda) - 1)/lamda), longitude)
+cor.test((((price^lamda) - 1)/lamda), accommodates)
+cor.test((((price^lamda) - 1)/lamda), availability_365)
+cor.test((((price^lamda) - 1)/lamda), review_scores_cleanliness)
+cor.test((((price^lamda) - 1)/lamda), review_scores_location)
+cor.test((((price^lamda) - 1)/lamda), calculated_host_listings_count_private_rooms)
+cor.test((((price^lamda) - 1)/lamda), banios)
+```
+
+Primer supuesto, al analizar la correlación entre los precios y variables independientes, observamos los p_value son menores al siginificancia de 0.05, por lo que concluímos que hay linealidad en nuetro modelo. (Vease el gráfico obtenido)
+
+## Normalidad
+
+```{r}
+plot(modelo_final, 2)
+shapiro.test(modelo_final$residuals)
+```
+
+Viendo en gráfico anterior, podriamos indicar, que si hay normalidad, sin embargo al realizar una prueba de Shapiro-Wilk, notemos que nuestro $p_value < 0.05$, por lo que rechazamos la $H_{0}:$ Los residuos siguen una distribución normal, por lo que concluímos que los residuos no siguen una distribución normal, Si bien al aplicar la prueba Shapiro -wilk podría parecer que nuestro modelo no cumple con la normalidad al analizar el gráfico qq podemos decir con seguridad que si la cumple, teniendo así al primer supuesto validado
+
+## Homocedasticidad
+
+```{r}
+plot(modelo_final, 3)
+```
+
+Viendo el gráfico anterior, se puede observar que los puntos no siguen algún tipo de patrón, además de que la línea roja va de manera horizontal, por lo que nuestro modelo cumple con la Homocedasticidad, por lo que nuevamente obtenemos tres supuestos válidos.
+
+## Multicolinealidad
+
+```{r}
+vif(modelo_final)
+```
+
+En este caso como nuestros valores son menores a cinco, podemos concluir que no hay problemas de multocolinealidad, esto lo podemos ver también dado que no existe mucha correlación en la variables independientes, lo cual se pudo en el análisis que se hizo en el archivo "Receta para un buen modelo de regresión lineal múltiple", por lo que tenemos un escenario aceptable, así validando ya cuatro supuestos.
+
+## Valores influyentes
+
+```{r}
+plot(modelo_final, 5)
+```
+
+Finalmente, para la validación de éste último supuesto, veamos que al parecer ya no tenemos valores palanca, ya que anteriormente, con el método distance cook, fuimos elimando dichos valores, así ya no tenemos valores influyentes, y concluímos que validamos nuetro modelo con 5 puestos.
+
+## Interpretación
+
+```{r}
+summary(modelo_final)
+```
+
+Finalmente obtenemos la siguiente ecuación: dando la variable transformada:
+
+$$
+y =\dfrac{price^{\lambda} - 1}{\lambda} = -225.8 + 0.09588*(host \ total \ listings \ count) 
+$$ $$
++ 8.513*(latitude) - 21.02*(longitude) + 0.4465*(accommodates) 
++ 0.0009943*(availability \ 365)
+$$ $$
++ 1.467*(review \ scores \ cleanliness ) + 2.709*(
+review \ scores \ location 
+)
+$$
+
+Así con la ecuación anterior ya podemos predecir dichos precios usando nuestra calculadora, pero antes, vamos a interpretar cada uno de los coeficientes asociados a cada variable.
+
+Para esto veamos que nuestro R cuadrada ajustada del 0.5377, es decir nuestro modelo nos explica un 53.77% de nuestro problema de predecir el precio de un Airbnb, y además es muy significante, dado que nuestro p_value es menor que un nivel de significancia 0.05, así como cada una de nuestras variables explicativas.
+
+Finalmente la interpretación de cada coeficiente es la siguinete:
+
+-   Decimos que con 0.09588 de Airbnb que posee el anfitrion el precio aumentará.
+
+-   Decimos por cada 8.513 que la latitud se mueva en la CDMX, el precio aumnetará.
+
+-   Dado que la longitud en la CDMX es negativa, decimos que precio aumenta con 21.02 por cada vez la longitud se mueva.
+
+-   Decimos por cada cada media persona (0.4465 casi media) que se hospede en el AIRBNB, el precio igual aumnetará, por lo que una persona completa casi duplica el precio.
+
+-   Veamos que por la poca disponiblidad de un 0.0009943, es decir mientra casi no haya disponibilidad el precio aumenta.
+
+-   Veamos que por puntos que se les dan a la limpieza de dicho AIRBNB, igual nuestro precio aumnetará con una razón de 1.467
+
+-   Analogamente que el anterior, mientras puntos tenga por la ubicacón del AIRBNB, mayor será el precio con una razón de 2.709
